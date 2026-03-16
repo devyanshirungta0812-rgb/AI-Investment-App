@@ -234,13 +234,30 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
     if (!m) return false;
     // Core sections required for a professional memo
     const requiredSections = [
-      'executiveSummary',
+      'instrumentOverview',
+      'issuerOverview',
+      'industryOverview',
+      'creditRatingAnalysis',
+      'financialPerformanceAnalysis',
+      'balanceSheetStrength',
+      'assetQualityCreditRisk',
+      'yieldRelativeValueAnalysis',
+      'liquidityMarketability',
+      'riskAnalysis',
+      'swotAnalysis',
+      'almSuitability',
       'financialAnnexure',
-      'recommendation'
+      'finalInvestmentRecommendation'
     ];
     return requiredSections.every(section => {
       const val = (m as any)[section];
       if (Array.isArray(val)) return val.length > 0;
+      if (typeof val === 'object' && val !== null) {
+        // Specific deep checks
+        if (section === 'issuerOverview' && (!val.management || val.management.length === 0)) return false;
+        if (section === 'financialPerformanceAnalysis' && (!val.trends || val.trends.length === 0)) return false;
+        return Object.keys(val).length > 0;
+      }
       return !!val;
     });
   };
@@ -362,13 +379,20 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
     };
 
     const sections = [
-      { id: 'instrument-details', title: 'Instrument Details' },
-      { id: 'management-table', title: 'Management' },
-      { id: 'yield-table', title: 'Yield Analysis' },
-      { id: 'financial-table', title: 'Financial Performance' },
-      { id: 'trend-graph', title: 'Financial Trend Graph' },
-      { id: 'swot-table', title: 'SWOT Analysis' },
-      { id: 'annexure-table', title: 'Financial Annexure' }
+      { id: 'instrument-overview', title: '01. Instrument Overview' },
+      { id: 'issuer-overview', title: '02. Issuer Overview' },
+      { id: 'industry-overview', title: '03. Industry Overview' },
+      { id: 'credit-rating-analysis', title: '04. Credit Rating Analysis' },
+      { id: 'financial-performance-analysis', title: '05. Financial Performance Analysis' },
+      { id: 'balance-sheet-strength', title: '06. Balance Sheet Strength' },
+      { id: 'asset-quality-credit-risk', title: '07. Asset Quality and Credit Risk' },
+      { id: 'yield-relative-value-analysis', title: '08. Yield and Relative Value Analysis' },
+      { id: 'liquidity-marketability', title: '09. Liquidity and Marketability' },
+      { id: 'risk-analysis', title: '10. Risk Analysis' },
+      { id: 'swot-analysis', title: '11. SWOT Analysis' },
+      { id: 'alm-suitability', title: '12. ALM Suitability' },
+      { id: 'annexure-table', title: '13. Financial Annexure' },
+      { id: 'final-recommendation', title: '14. Final Investment Recommendation' }
     ];
 
     try {
@@ -401,114 +425,138 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
               spacing: { after: 400 },
             }),
 
-            new Paragraph({ text: "01. Verdict Header", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ 
-              children: [new TextRun({ text: `Final Recommendation: ${memo.verdict}`, bold: true })] 
-            }),
-            ...(capturedImages['instrument-details'] ? [
+            new Paragraph({ text: "01. Instrument Overview", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            ...(capturedImages['instrument-overview'] ? [
               new Paragraph({
                 children: [new ImageRun({ 
-                  data: capturedImages['instrument-details']!.data, 
-                  transformation: { width: 600, height: 600 * capturedImages['instrument-details']!.aspectRatio },
+                  data: capturedImages['instrument-overview']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['instrument-overview']!.aspectRatio },
                   type: 'png'
                 })],
                 alignment: AlignmentType.CENTER,
                 spacing: { before: 200, after: 200 }
-              }),
-              new Paragraph({ text: "Table: Instrument Details", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
+              })
             ] : []),
 
-            new Paragraph({ text: "02. Executive Summary", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ text: memo.executiveSummary, spacing: { after: 200 } }),
+            new Paragraph({ text: "02. Issuer Overview", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.issuerOverview.description }),
+            new Paragraph({ text: `Ownership Structure: ${memo.issuerOverview.ownershipStructure}` }),
+            new Paragraph({ text: `Status: ${memo.issuerOverview.status}` }),
+            new Paragraph({ text: `Sector Positioning: ${memo.issuerOverview.sectorPositioning}` }),
+            new Paragraph({ text: `Major Business Lines: ${memo.issuerOverview.majorBusinessLines.join(', ')}` }),
+            ...(memo.issuerOverview.loanBookComposition ? [new Paragraph({ text: `Loan Book Composition: ${memo.issuerOverview.loanBookComposition}` })] : []),
+            new Paragraph({ text: `Strategic Role: ${memo.issuerOverview.strategicRole}` }),
+            ...(memo.issuerOverview.management && memo.issuerOverview.management.length > 0 ? [
+              new Paragraph({ 
+                children: [new TextRun({ text: "Key Management:", bold: true })], 
+                spacing: { before: 200 } 
+              }),
+              ...memo.issuerOverview.management.map(p => new Paragraph({ text: `• ${p.name} - ${p.designation}`, bullet: { level: 0 } }))
+            ] : []),
+            new Paragraph({ text: "", spacing: { after: 200 } }),
 
-            new Paragraph({ text: "03. Company Overview", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ text: memo.companyOverview.description, spacing: { after: 200 } }),
+            new Paragraph({ text: "03. Industry Overview", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.industryOverview.content }),
+            new Paragraph({ text: `Growth Drivers: ${memo.industryOverview.growthDrivers.join(', ')}` }),
+            new Paragraph({ text: `Regulatory Framework: ${memo.industryOverview.regulatoryFramework}` }),
+            new Paragraph({ text: `Risks: ${memo.industryOverview.risks.join(', ')}`, spacing: { after: 200 } }),
 
-            new Paragraph({ text: "04. Management", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            ...(capturedImages['management-table'] ? [
+            new Paragraph({ text: "04. Credit Rating Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ children: [new TextRun({ text: `Rating: ${memo.creditRatingAnalysis.rating}`, bold: true })] }),
+            new Paragraph({ text: `Rationale: ${memo.creditRatingAnalysis.rationale}` }),
+            new Paragraph({ text: `Key Drivers: ${memo.creditRatingAnalysis.keyDrivers.join(', ')}` }),
+            new Paragraph({ text: `Outlook: ${memo.creditRatingAnalysis.outlook}` }),
+            new Paragraph({ text: `Downgrade Triggers: ${memo.creditRatingAnalysis.downgradeTriggers.join(', ')}`, spacing: { after: 200 } }),
+
+            new Paragraph({ text: "05. Financial Performance Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.financialPerformanceAnalysis.discussion }),
+            ...(capturedImages['financial-performance-analysis'] ? [
               new Paragraph({
                 children: [new ImageRun({ 
-                  data: capturedImages['management-table']!.data, 
-                  transformation: { width: 600, height: 600 * capturedImages['management-table']!.aspectRatio },
+                  data: capturedImages['financial-performance-analysis']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['financial-performance-analysis']!.aspectRatio },
                   type: 'png'
                 })],
                 alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({ text: "Table: Management Stakeholders", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
+              })
             ] : []),
 
-            new Paragraph({ text: "05. ALM Suitability", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ 
-              children: [new TextRun({ text: `Duration: ${memo.almSuitability.duration}`, bold: true })] 
-            }),
+            new Paragraph({ text: "06. Balance Sheet Strength", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.balanceSheetStrength.discussion }),
+            ...(capturedImages['balance-sheet-strength'] ? [
+              new Paragraph({
+                children: [new ImageRun({ 
+                  data: capturedImages['balance-sheet-strength']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['balance-sheet-strength']!.aspectRatio },
+                  type: 'png'
+                })],
+                alignment: AlignmentType.CENTER
+              })
+            ] : []),
+
+            new Paragraph({ text: "07. Asset Quality and Credit Risk", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.assetQualityCreditRisk.discussion }),
+            ...(capturedImages['asset-quality-credit-risk'] ? [
+              new Paragraph({
+                children: [new ImageRun({ 
+                  data: capturedImages['asset-quality-credit-risk']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['asset-quality-credit-risk']!.aspectRatio },
+                  type: 'png'
+                })],
+                alignment: AlignmentType.CENTER
+              })
+            ] : []),
+
+            new Paragraph({ text: "08. Yield and Relative Value Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.yieldRelativeValueAnalysis.spreadCalculation }),
+            ...(capturedImages['yield-relative-value-analysis'] ? [
+              new Paragraph({
+                children: [new ImageRun({ 
+                  data: capturedImages['yield-relative-value-analysis']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['yield-relative-value-analysis']!.aspectRatio },
+                  type: 'png'
+                })],
+                alignment: AlignmentType.CENTER
+              })
+            ] : []),
+
+            new Paragraph({ text: "09. Liquidity and Marketability", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.liquidityMarketability.discussion }),
+            new Paragraph({ text: `Listing Exchange: ${memo.liquidityMarketability.listingExchange}` }),
+            new Paragraph({ text: `Typical Liquidity: ${memo.liquidityMarketability.typicalLiquidity}` }),
+            new Paragraph({ text: `Bid-Ask Spreads: ${memo.liquidityMarketability.bidAskSpreads}` }),
+            new Paragraph({ text: `Institutional Participation: ${memo.liquidityMarketability.institutionalParticipation}`, spacing: { after: 200 } }),
+
+            new Paragraph({ text: "10. Risk Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            ...(capturedImages['risk-analysis'] ? [
+              new Paragraph({
+                children: [new ImageRun({ 
+                  data: capturedImages['risk-analysis']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['risk-analysis']!.aspectRatio },
+                  type: 'png'
+                })],
+                alignment: AlignmentType.CENTER
+              })
+            ] : []),
+
+            new Paragraph({ text: "11. SWOT Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            ...(capturedImages['swot-analysis'] ? [
+              new Paragraph({
+                children: [new ImageRun({ 
+                  data: capturedImages['swot-analysis']!.data, 
+                  transformation: { width: 600, height: 600 * capturedImages['swot-analysis']!.aspectRatio },
+                  type: 'png'
+                })],
+                alignment: AlignmentType.CENTER
+              })
+            ] : []),
+
+            new Paragraph({ text: "12. ALM Suitability", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ children: [new TextRun({ text: `Duration: ${memo.almSuitability.duration}`, bold: true })] }),
             new Paragraph({ text: memo.almSuitability.explanation }),
-            new Paragraph({ text: `Solvency Impact: ${memo.almSuitability.solvencyImpact}`, spacing: { after: 200 } }),
+            new Paragraph({ text: `Liability Matching: ${memo.almSuitability.liabilityMatching}`, spacing: { after: 200 } }),
 
-            new Paragraph({ text: "06. Instrument Overview", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ text: memo.instrumentOverview, spacing: { after: 200 } }),
-
-            new Paragraph({ text: "07. Yield Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            ...(capturedImages['yield-table'] ? [
-              new Paragraph({
-                children: [new ImageRun({ 
-                  data: capturedImages['yield-table']!.data, 
-                  transformation: { width: 600, height: 600 * capturedImages['yield-table']!.aspectRatio },
-                  type: 'png'
-                })],
-                alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({ text: "Table: Yield & Spread Analysis", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
-            ] : []),
-
-            new Paragraph({ text: "08. Business & Industry Overview", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ text: memo.businessIndustryOverview, spacing: { after: 200 } }),
-
-            new Paragraph({ text: "09. Financial Performance", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            ...(capturedImages['financial-table'] ? [
-              new Paragraph({
-                children: [new ImageRun({ 
-                  data: capturedImages['financial-table']!.data, 
-                  transformation: { width: 600, height: 600 * capturedImages['financial-table']!.aspectRatio },
-                  type: 'png'
-                })],
-                alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({ text: "Table: Financial Performance Summary", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
-            ] : []),
-
-            new Paragraph({ text: "10. Financial Trend Graph", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            ...(capturedImages['trend-graph'] ? [
-              new Paragraph({
-                children: [new ImageRun({ 
-                  data: capturedImages['trend-graph']!.data, 
-                  transformation: { width: 600, height: 600 * capturedImages['trend-graph']!.aspectRatio },
-                  type: 'png'
-                })],
-                alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({ text: "Graph: Financial Trends", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
-            ] : []),
-
-            new Paragraph({ text: "11. Credit Profile", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ text: memo.creditProfile.discussion, spacing: { after: 200 } }),
-
-            new Paragraph({ text: "12. SWOT Analysis", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            ...(capturedImages['swot-table'] ? [
-              new Paragraph({
-                children: [new ImageRun({ 
-                  data: capturedImages['swot-table']!.data, 
-                  transformation: { width: 600, height: 600 * capturedImages['swot-table']!.aspectRatio },
-                  type: 'png'
-                })],
-                alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({ text: "Table: SWOT Analysis", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
-            ] : []),
-
-            new Paragraph({ text: "13. Recommendation", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
-            new Paragraph({ text: memo.recommendation, spacing: { after: 200 } }),
-
-            new Paragraph({ text: "14. Financial Annexure", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: "13. Financial Annexure", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
             ...(capturedImages['annexure-table'] ? [
               new Paragraph({
                 children: [new ImageRun({ 
@@ -517,9 +565,19 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
                   type: 'png'
                 })],
                 alignment: AlignmentType.CENTER
-              }),
-              new Paragraph({ text: "Table: Detailed Financial Annexure", alignment: AlignmentType.CENTER, spacing: { after: 200 } })
+              })
             ] : []),
+
+            new Paragraph({ text: "14. Final Investment Recommendation", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ children: [new TextRun({ text: `Verdict: ${memo.finalInvestmentRecommendation.verdict}`, bold: true })] }),
+            new Paragraph({ text: memo.finalInvestmentRecommendation.justification }),
+            new Paragraph({ text: `Credit Strength: ${memo.finalInvestmentRecommendation.creditStrength}` }),
+            new Paragraph({ text: `Yield Attractiveness: ${memo.finalInvestmentRecommendation.yieldAttractiveness}` }),
+            new Paragraph({ text: `Relative Spread: ${memo.finalInvestmentRecommendation.relativeSpread}` }),
+            new Paragraph({ text: `Investor Suitability: ${memo.finalInvestmentRecommendation.investorSuitability}`, spacing: { after: 200 } }),
+
+            new Paragraph({ text: "Data Sources", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: memo.sources.join(', '), spacing: { after: 200 } }),
           ]
         }]
       });
@@ -538,9 +596,18 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
     if (selectedBond) {
       const fetchMemo = async () => {
         setLoading(true);
-        const data = await geminiService.generateMemo(selectedBond);
-        setMemo(data);
-        setLoading(false);
+        try {
+          const data = await geminiService.generateMemo(selectedBond);
+          if (!data) {
+            alert('Failed to generate investment memo. The AI service might be experiencing high load. Please try again or select another bond.');
+          }
+          setMemo(data);
+        } catch (error) {
+          console.error('Memo generation error:', error);
+          alert('An error occurred while generating the memo. Please check your connection and try again.');
+        } finally {
+          setLoading(false);
+        }
       };
       fetchMemo();
     }
@@ -624,8 +691,8 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
               </div>
             </div>
 
-            <div id="instrument-details" className="grid grid-cols-6 gap-4 p-4 bg-slate-50 rounded-xl border border-border">
-              {Object.entries(memo.instrumentDetails || {}).map(([key, val]) => (
+            <div id="instrument-overview" className="grid grid-cols-5 gap-4 p-4 bg-slate-50 rounded-xl border border-border">
+              {Object.entries(memo.instrumentOverview || {}).map(([key, val]) => (
                 <div key={key}>
                   <div className="text-[9px] text-slate-400 uppercase tracking-widest mb-1 font-bold">{key.replace(/([A-Z])/g, ' $1')}</div>
                   <div className="text-xs font-bold text-slate-800">{val}</div>
@@ -635,199 +702,172 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
           </header>
 
           <div className="space-y-12">
-            {/* 02. EXECUTIVE SUMMARY */}
-            <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">02. Executive Summary</h3>
-              <div className="text-sm leading-relaxed text-slate-800">
-                <ReactMarkdown>{safeString(memo.executiveSummary)}</ReactMarkdown>
-              </div>
-            </section>
-
-            {/* 03. COMPANY OVERVIEW */}
-            <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">03. Company Overview</h3>
+            {/* 02. ISSUER OVERVIEW */}
+            <section id="issuer-overview" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">02. Issuer Overview</h3>
               <div className="mb-6">
-                <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.companyOverview?.description}</p>
-                <div className="grid grid-cols-4 gap-4">
-                  {(memo.companyOverview?.metrics || []).map((m, i) => (
-                    <div key={i} className="p-3 rounded-lg bg-slate-50 border border-slate-100">
-                      <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">{m.label}</div>
-                      <div className="text-xs font-bold text-slate-900">{m.value}</div>
+                <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.issuerOverview?.description}</p>
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Ownership Structure</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.issuerOverview?.ownershipStructure}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Status</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.issuerOverview?.status}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Sector Positioning</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.issuerOverview?.sectorPositioning}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Strategic Role</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.issuerOverview?.strategicRole}</div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Major Business Lines</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {memo.issuerOverview?.majorBusinessLines.map((line, i) => (
+                        <span key={i} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-[10px] font-medium border border-slate-200">{line}</span>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                  {memo.issuerOverview?.loanBookComposition && (
+                    <div>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Loan Book Composition</h4>
+                      <p className="text-xs text-slate-700">{memo.issuerOverview.loanBookComposition}</p>
+                    </div>
+                  )}
+                  {memo.issuerOverview?.management && memo.issuerOverview.management.length > 0 && (
+                    <div>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Key Management & Stakeholders</h4>
+                      <div className="border border-border rounded-lg overflow-hidden">
+                        <table className="w-full text-left border-collapse text-[11px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-border">
+                              <th className="p-2 font-bold text-slate-500 uppercase tracking-wider">Name</th>
+                              <th className="p-2 font-bold text-slate-500 uppercase tracking-wider">Designation</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {memo.issuerOverview.management.map((person, i) => (
+                              <tr key={i} className="border-b border-border/50 last:border-0">
+                                <td className="p-2 font-bold text-slate-900">{person.name}</td>
+                                <td className="p-2 text-slate-600">{person.designation}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
 
-            {/* 04. LIST OF STAKEHOLDERS / MANAGEMENT */}
-            <section id="management-table" className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">04. List of Stakeholders / Management</h3>
-              <div className="border border-border rounded-xl overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-slate-100">
-                      <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Name</th>
-                      <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Designation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(memo.management || []).map((m, i) => (
-                      <tr key={i} className="border-b border-border/50">
-                        <td className="p-3 font-bold text-slate-900">{m.name}</td>
-                        <td className="p-3 text-slate-700">{m.designation}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* 03. INDUSTRY OVERVIEW */}
+            <section id="industry-overview" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">03. Industry Overview</h3>
+              <div className="space-y-6">
+                <p className="text-sm text-slate-800 leading-relaxed">{memo.industryOverview?.content}</p>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Growth Drivers</h4>
+                    <ul className="space-y-2">
+                      {memo.industryOverview?.growthDrivers.map((d, i) => (
+                        <li key={i} className="text-xs text-slate-700 flex gap-2"><span className="text-accent">•</span> {d}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Regulatory Framework</h4>
+                    <p className="text-xs text-slate-700">{memo.industryOverview?.regulatoryFramework}</p>
+                  </div>
+                </div>
               </div>
             </section>
 
-            {/* 05. ALM SUITABILITY ANALYSIS */}
-            <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">05. ALM Suitability Analysis</h3>
+            {/* 04. CREDIT RATING ANALYSIS */}
+            <section id="credit-rating-analysis" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">04. Credit Rating Analysis</h3>
               <div className="p-6 rounded-xl border border-border bg-slate-50">
-                <div className="flex items-center gap-3 mb-6">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                    memo.almSuitability?.duration === 'Long' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    memo.almSuitability?.duration === 'Medium' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                    'bg-slate-50 text-slate-700 border-slate-200'
-                  }`}>
-                    {memo.almSuitability?.duration} Duration Bucket
-                  </span>
+                <div className="flex items-center gap-3 mb-4">
+                  <ShieldCheck className="text-accent" size={20} />
+                  <span className="text-lg font-bold text-slate-900">{memo.creditRatingAnalysis?.rating}</span>
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded border border-blue-200 uppercase">{memo.creditRatingAnalysis?.outlook} Outlook</span>
                 </div>
+                <p className="text-sm text-slate-800 mb-6 leading-relaxed">{memo.creditRatingAnalysis?.rationale}</p>
                 <div className="grid grid-cols-2 gap-8">
                   <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Duration & Liability Matching</h4>
-                    <p className="text-sm text-slate-800 leading-relaxed">{memo.almSuitability?.explanation}</p>
-                  </div>
-                  <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Solvency Impact</h4>
-                    <p className="text-sm text-slate-800 leading-relaxed">{memo.almSuitability?.solvencyImpact}</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* 06. INSTRUMENT OVERVIEW */}
-            <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">06. Instrument Overview</h3>
-              <p className="text-sm text-slate-800 leading-relaxed">{safeString(memo.instrumentOverview)}</p>
-            </section>
-
-            {/* 07. YIELD & SPREAD ANALYSIS */}
-            <section id="yield-table" className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">07. Yield & Spread Analysis</h3>
-              <div className="grid grid-cols-3 gap-6 mb-6">
-                <div className="p-4 rounded-xl border border-border bg-slate-50">
-                  <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-2">Selected NCD Yield</div>
-                  <div className="text-xl font-mono font-bold text-accent">{memo.yieldAnalysis?.ncdYield || 'N/A'}</div>
-                </div>
-                <div className="p-4 rounded-xl border border-border bg-slate-50">
-                  <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-2">10Y G-Sec Yield</div>
-                  <div className="text-xl font-mono font-bold text-blue-600">{memo.yieldAnalysis?.gSecYield || 'N/A'}</div>
-                </div>
-                <div className="p-4 rounded-xl border border-border bg-slate-50">
-                  <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-2">Large Bank FD Yield</div>
-                  <div className="text-xl font-mono font-bold text-amber-600">{memo.yieldAnalysis?.fdYield || 'N/A'}</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-slate-50 border border-slate-100">
-                  <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Credit Spread vs G-Sec</div>
-                  <div className="text-sm font-bold text-slate-900">{memo.yieldAnalysis?.creditSpread}</div>
-                </div>
-                <div className="p-4 rounded-lg bg-slate-50 border border-slate-100">
-                  <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Yield Premium vs FD</div>
-                  <div className="text-sm font-bold text-slate-900">{memo.yieldAnalysis?.yieldPremium}</div>
-                </div>
-              </div>
-            </section>
-
-            {/* 08. BUSINESS & INDUSTRY OVERVIEW */}
-            <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">08. Business & Industry Overview</h3>
-              <p className="text-sm text-slate-800 leading-relaxed">{safeString(memo.businessIndustryOverview)}</p>
-            </section>
-
-            {/* 09. FINANCIAL PERFORMANCE */}
-            <section id="financial-table" className="pdf-avoid-break pdf-section">
-              <div className="flex justify-between items-end mb-4">
-                <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em]">09. Financial Performance</h3>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Values in ₹ Crore</span>
-              </div>
-              <div className="border border-border rounded-xl overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-slate-100">
-                      <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Year</th>
-                      <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Revenue / Operating Income</th>
-                      <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Net Profit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(memo.financialPerformanceTable || []).map((row, i) => (
-                      <tr key={i} className="border-b border-border/50">
-                        <td className="p-3 font-bold text-slate-900">{row.year}</td>
-                        <td className="p-3 font-mono text-slate-700">{row.revenue}</td>
-                        <td className="p-3 font-mono text-slate-700">{row.netProfit}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            {/* 10. FINANCIAL TREND GRAPH */}
-            <section id="trend-graph" className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">10. Financial Trend Graph</h3>
-              <div className="p-8 rounded-xl border border-border bg-slate-50">
-                <div className="space-y-8">
-                  <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Revenue Trend</h4>
-                    <div className="space-y-3">
-                      {(memo.financialTrendData || []).map((d, i) => (
-                        <div key={i} className="flex items-center gap-4">
-                          <div className="w-12 text-[10px] font-bold text-slate-500">{d.year}</div>
-                          <div className="flex-1 h-3 bg-slate-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-accent transition-all duration-1000" 
-                              style={{ width: `${Math.min(100, (d.revenueValue / Math.max(...memo.financialTrendData.map(x => x.revenueValue))) * 100)}%` }}
-                            />
-                          </div>
-                          <div className="w-24 text-[10px] font-mono text-right text-slate-600">{d.revenueLabel}</div>
-                        </div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Key Rating Drivers</h4>
+                    <ul className="space-y-2">
+                      {memo.creditRatingAnalysis?.keyDrivers.map((d, i) => (
+                        <li key={i} className="text-xs text-slate-700 flex gap-2"><span className="text-emerald-600">↑</span> {d}</li>
                       ))}
-                    </div>
+                    </ul>
                   </div>
                   <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Profit Trend</h4>
-                    <div className="space-y-3">
-                      {(memo.financialTrendData || []).map((d, i) => (
-                        <div key={i} className="flex items-center gap-4">
-                          <div className="w-12 text-[10px] font-bold text-slate-500">{d.year}</div>
-                          <div className="flex-1 h-3 bg-slate-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-emerald-500 transition-all duration-1000" 
-                              style={{ width: `${Math.min(100, (d.netProfitValue / Math.max(...memo.financialTrendData.map(x => x.netProfitValue))) * 100)}%` }}
-                            />
-                          </div>
-                          <div className="w-24 text-[10px] font-mono text-right text-slate-600">{d.netProfitLabel}</div>
-                        </div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Potential Downgrade Triggers</h4>
+                    <ul className="space-y-2">
+                      {memo.creditRatingAnalysis?.downgradeTriggers.map((d, i) => (
+                        <li key={i} className="text-xs text-slate-700 flex gap-2"><span className="text-rose-600">↓</span> {d}</li>
                       ))}
-                    </div>
+                    </ul>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* 11. CREDIT PROFILE */}
-            <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">11. Credit Profile</h3>
-              <div className="mb-6">
-                <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.creditProfile?.discussion}</p>
+            {/* 05. FINANCIAL PERFORMANCE ANALYSIS */}
+            <section id="financial-performance-analysis" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">05. Financial Performance Analysis</h3>
+              <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.financialPerformanceAnalysis?.discussion}</p>
+              <div className="space-y-8">
+                {memo.financialPerformanceAnalysis?.trends && memo.financialPerformanceAnalysis.trends.length > 0 ? (
+                  memo.financialPerformanceAnalysis.trends.map((trend, idx) => (
+                    <div key={idx} className="p-6 rounded-xl border border-border bg-white">
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{trend.metric} Trend</h4>
+                      <div className="flex items-end gap-2 h-32">
+                        {trend.values.map((v, i) => {
+                          const numericValue = parseFloat(v.value.replace(/[^0-9.]/g, '')) || 0;
+                          const maxVal = Math.max(...trend.values.map(x => parseFloat(x.value.replace(/[^0-9.]/g, '')) || 0));
+                          const height = maxVal > 0 ? (numericValue / maxVal) * 100 : 0;
+                          return (
+                            <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
+                              <div className="relative w-full flex justify-center">
+                                <div 
+                                  className="w-full max-w-[40px] bg-accent/20 group-hover:bg-accent/40 transition-all rounded-t-sm"
+                                  style={{ height: `${height}%` }}
+                                />
+                                <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-accent whitespace-nowrap">
+                                  {v.value}
+                                </div>
+                              </div>
+                              <div className="text-[9px] font-bold text-slate-500">{v.year}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-12 text-center border border-dashed border-border rounded-xl bg-slate-50">
+                    <p className="text-sm text-slate-400 italic">Financial trend data is being analyzed and verified...</p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* 06. BALANCE SHEET STRENGTH */}
+            <section id="balance-sheet-strength" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">06. Balance Sheet Strength</h3>
+              <div className="p-6 rounded-xl border border-border bg-slate-50">
+                <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.balanceSheetStrength?.discussion}</p>
                 <div className="grid grid-cols-3 gap-4">
-                  {(memo.creditProfile?.metrics || []).map((m, i) => (
-                    <div key={i} className="p-4 rounded-lg bg-slate-50 border border-slate-100">
+                  {memo.balanceSheetStrength?.metrics.map((m, i) => (
+                    <div key={i} className="p-4 rounded-lg bg-white border border-border shadow-sm">
                       <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">{m.label}</div>
                       <div className="text-sm font-bold text-slate-900">{m.value}</div>
                     </div>
@@ -836,16 +876,109 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
               </div>
             </section>
 
-            {/* 12. SWOT ANALYSIS */}
-            <section id="swot-table" className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">12. SWOT Analysis</h3>
+            {/* 07. ASSET QUALITY AND CREDIT RISK */}
+            <section id="asset-quality-credit-risk" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">07. Asset Quality and Credit Risk</h3>
+              <div className="p-6 rounded-xl border border-border bg-slate-50">
+                <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.assetQualityCreditRisk?.discussion}</p>
+                <div className="grid grid-cols-3 gap-4">
+                  {memo.assetQualityCreditRisk?.metrics.map((m, i) => (
+                    <div key={i} className="p-4 rounded-lg bg-white border border-border shadow-sm">
+                      <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">{m.label}</div>
+                      <div className="text-sm font-bold text-slate-900">{m.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {/* 08. YIELD AND RELATIVE VALUE ANALYSIS */}
+            <section id="yield-relative-value-analysis" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">08. Yield and Relative Value Analysis</h3>
+              <div className="space-y-6">
+                <div className="p-4 rounded-xl bg-accent/5 border border-accent/10">
+                  <h4 className="text-[10px] font-bold text-accent uppercase tracking-widest mb-2">Spread Calculation</h4>
+                  <p className="text-sm font-bold text-slate-900">{memo.yieldRelativeValueAnalysis?.spreadCalculation}</p>
+                </div>
+                <div className="border border-border rounded-xl overflow-hidden">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-border bg-slate-100">
+                        <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Instrument</th>
+                        <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Yield %</th>
+                        <th className="p-3 font-bold text-slate-600 uppercase tracking-widest">Spread (bps)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memo.yieldRelativeValueAnalysis?.comparisonTable.map((row, i) => (
+                        <tr key={i} className="border-b border-border/50">
+                          <td className="p-3 font-medium text-slate-900">{row.instrument}</td>
+                          <td className="p-3 font-mono text-accent font-bold">{row.yield}</td>
+                          <td className="p-3 font-mono text-slate-700">{row.spread}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            {/* 09. LIQUIDITY AND MARKETABILITY */}
+            <section id="liquidity-marketability" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">09. Liquidity and Marketability</h3>
+              <div className="p-6 rounded-xl border border-border bg-slate-50">
+                <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.liquidityMarketability?.discussion}</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-white border border-border">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Listing Exchange</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.liquidityMarketability?.listingExchange}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white border border-border">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Typical Liquidity</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.liquidityMarketability?.typicalLiquidity}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white border border-border">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Bid-Ask Spreads</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.liquidityMarketability?.bidAskSpreads}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white border border-border">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1 font-bold">Institutional Participation</div>
+                    <div className="text-xs font-bold text-slate-900">{memo.liquidityMarketability?.institutionalParticipation}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* 10. RISK ANALYSIS */}
+            <section id="risk-analysis" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">10. Risk Analysis</h3>
+              <div className="space-y-4">
+                {memo.riskAnalysis?.map((risk, i) => (
+                  <div key={i} className="p-5 rounded-xl border border-border bg-white shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{risk.type}</h4>
+                    </div>
+                    <p className="text-sm text-slate-700 mb-3">{risk.description}</p>
+                    <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-[11px] text-slate-600 italic">
+                      <span className="font-bold text-slate-400 uppercase mr-2">Evidence:</span>
+                      {risk.evidence}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* 11. SWOT ANALYSIS */}
+            <section id="swot-analysis" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">11. SWOT Analysis</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-6 rounded-xl border border-emerald-500/20 bg-emerald-50">
                   <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest mb-4">Strengths</div>
                   <ul className="space-y-2">
-                    {(memo.swot?.strengths || []).map((s, i) => (
+                    {(memo.swotAnalysis?.strengths || []).map((s, i) => (
                       <li key={i} className="text-xs text-slate-800 flex gap-2">
-                        <span className="text-emerald-600">•</span> {s}
+                        <span className="text-emerald-600 font-bold">•</span> {s}
                       </li>
                     ))}
                   </ul>
@@ -853,9 +986,9 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
                 <div className="p-6 rounded-xl border border-rose-500/20 bg-rose-50">
                   <div className="text-[10px] font-bold text-rose-700 uppercase tracking-widest mb-4">Weaknesses</div>
                   <ul className="space-y-2">
-                    {(memo.swot?.weaknesses || []).map((s, i) => (
+                    {(memo.swotAnalysis?.weaknesses || []).map((s, i) => (
                       <li key={i} className="text-xs text-slate-800 flex gap-2">
-                        <span className="text-rose-600">•</span> {s}
+                        <span className="text-rose-600 font-bold">•</span> {s}
                       </li>
                     ))}
                   </ul>
@@ -863,9 +996,9 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
                 <div className="p-6 rounded-xl border border-blue-500/20 bg-blue-50">
                   <div className="text-[10px] font-bold text-blue-700 uppercase tracking-widest mb-4">Opportunities</div>
                   <ul className="space-y-2">
-                    {(memo.swot?.opportunities || []).map((s, i) => (
+                    {(memo.swotAnalysis?.opportunities || []).map((s, i) => (
                       <li key={i} className="text-xs text-slate-800 flex gap-2">
-                        <span className="text-blue-600">•</span> {s}
+                        <span className="text-blue-600 font-bold">•</span> {s}
                       </li>
                     ))}
                   </ul>
@@ -873,9 +1006,9 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
                 <div className="p-6 rounded-xl border border-amber-500/20 bg-amber-50">
                   <div className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-4">Threats</div>
                   <ul className="space-y-2">
-                    {(memo.swot?.threats || []).map((s, i) => (
+                    {(memo.swotAnalysis?.threats || []).map((s, i) => (
                       <li key={i} className="text-xs text-slate-800 flex gap-2">
-                        <span className="text-amber-600">•</span> {s}
+                        <span className="text-amber-600 font-bold">•</span> {s}
                       </li>
                     ))}
                   </ul>
@@ -883,20 +1016,32 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
               </div>
             </section>
 
-            {/* 13. INVESTMENT TEAM RECOMMENDATION */}
-            <section className="pdf-page-break pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">13. Investment Team Recommendation</h3>
-              <div className="p-8 rounded-2xl bg-accent text-white shadow-lg">
-                <h4 className="text-lg font-black uppercase tracking-tight mb-4">NBHI Portfolio Recommendation</h4>
-                <p className="text-sm font-medium leading-relaxed mb-6">{safeString(memo.recommendation)}</p>
-                <div className="w-24 h-8 border-b-2 border-white/30"></div>
+            {/* 12. ALM SUITABILITY */}
+            <section id="alm-suitability" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">12. ALM Suitability</h3>
+              <div className="p-6 rounded-xl border border-border bg-slate-50">
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="px-3 py-1 rounded-full bg-accent text-white text-[10px] font-bold uppercase tracking-wider">
+                    {memo.almSuitability?.duration} Duration Bucket
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-8">
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Liability Matching Analysis</h4>
+                    <p className="text-sm text-slate-800 leading-relaxed">{memo.almSuitability?.explanation}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">ALM Fit Justification</h4>
+                    <p className="text-sm text-slate-800 leading-relaxed">{memo.almSuitability?.liabilityMatching}</p>
+                  </div>
+                </div>
               </div>
             </section>
 
-            {/* 14. FINANCIAL ANNEXURE */}
+            {/* 13. FINANCIAL ANNEXURE */}
             <section id="annexure-table" className="pdf-page-break pdf-avoid-break pdf-section">
               <div className="flex justify-between items-end mb-6">
-                <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em]">14. Financial Annexure</h3>
+                <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em]">13. Financial Annexure</h3>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Values in ₹ Cr (EPS in ₹)</span>
               </div>
               <div className="border border-border rounded-xl overflow-hidden bg-white">
@@ -916,11 +1061,11 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
                       memo.financialAnnexure.map((row, i) => (
                         <tr key={i} className="border-b border-border/50">
                           <td className="p-3 font-medium text-slate-900">{row.metric}</td>
-                          <td className="p-3 font-mono text-slate-700">{row.fy21 || 'Not Available'}</td>
-                          <td className="p-3 font-mono text-slate-700">{row.fy22 || 'Not Available'}</td>
-                          <td className="p-3 font-mono text-slate-700">{row.fy23 || 'Not Available'}</td>
-                          <td className="p-3 font-mono text-slate-700">{row.fy24 || 'Not Available'}</td>
-                          <td className="p-3 font-mono text-slate-700">{row.fy25 || 'Not Available'}</td>
+                          <td className="p-3 font-mono text-slate-700">{row.fy21 || 'N/A'}</td>
+                          <td className="p-3 font-mono text-slate-700">{row.fy22 || 'N/A'}</td>
+                          <td className="p-3 font-mono text-slate-700">{row.fy23 || 'N/A'}</td>
+                          <td className="p-3 font-mono text-slate-700">{row.fy24 || 'N/A'}</td>
+                          <td className="p-3 font-mono text-slate-700">{row.fy25 || 'N/A'}</td>
                         </tr>
                       ))
                     ) : (
@@ -935,9 +1080,53 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
               </div>
             </section>
 
-            {/* 15. DATA SOURCES */}
+            {/* 14. FINAL INVESTMENT RECOMMENDATION */}
+            <section id="final-recommendation" className="pdf-avoid-break pdf-section">
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">14. Final Investment Recommendation</h3>
+              <div className="p-8 rounded-2xl bg-accent text-white shadow-lg">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h4 className="text-lg font-black uppercase tracking-tight mb-1">NBHI Portfolio Recommendation</h4>
+                    <p className="text-xs text-white/70 font-bold uppercase tracking-widest">Institutional Credit View</p>
+                  </div>
+                  <div className="px-4 py-2 bg-white text-accent rounded-xl font-black text-xl shadow-inner">
+                    {memo.finalInvestmentRecommendation?.verdict}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-8 mb-8">
+                  <div className="space-y-4">
+                    <div>
+                      <h5 className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-1">Credit Strength</h5>
+                      <p className="text-sm font-medium">{memo.finalInvestmentRecommendation?.creditStrength}</p>
+                    </div>
+                    <div>
+                      <h5 className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-1">Yield Attractiveness</h5>
+                      <p className="text-sm font-medium">{memo.finalInvestmentRecommendation?.yieldAttractiveness}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <h5 className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-1">Relative Spread</h5>
+                      <p className="text-sm font-medium">{memo.finalInvestmentRecommendation?.relativeSpread}</p>
+                    </div>
+                    <div>
+                      <h5 className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-1">Investor Suitability</h5>
+                      <p className="text-sm font-medium">{memo.finalInvestmentRecommendation?.investorSuitability}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-white/20">
+                  <h5 className="text-[10px] font-bold text-white/60 uppercase tracking-widest mb-2">Final Justification</h5>
+                  <p className="text-sm font-medium leading-relaxed italic">"{memo.finalInvestmentRecommendation?.justification}"</p>
+                </div>
+              </div>
+            </section>
+
+            {/* DATA SOURCES */}
             <section className="pdf-avoid-break pdf-section">
-              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">15. Data Sources</h3>
+              <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">Data Sources</h3>
               <div className="p-6 rounded-xl border border-border bg-slate-50">
                 <ul className="grid grid-cols-2 gap-4">
                   {(memo.sources || []).map((source, i) => (

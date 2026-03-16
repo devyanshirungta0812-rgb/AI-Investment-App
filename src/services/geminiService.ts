@@ -16,59 +16,109 @@ export interface NCD {
 export interface InvestmentMemo {
   issuerName: string;
   generatedDate: string;
-  verdict: 'BUY' | 'HOLD' | 'SELL';
-  instrumentDetails: {
-    isin: string;
+  verdict: 'BUY' | 'SELECTIVE BUY' | 'HOLD' | 'AVOID';
+  
+  // 1. Instrument Overview
+  instrumentOverview: {
+    issuerName: string;
+    ncdSeries: string;
     couponRate: string;
-    rating: string;
-    issueDate: string;
-    maturityDate: string;
-    marketType: string;
+    maturity: string;
+    creditRating: string;
+    issueSize: string;
+    listingExchange: string;
+    isin: string;
+    yieldSpreadVsGSec: string;
   };
-  executiveSummary: string;
-  companyOverview: {
+  
+  // 2. Issuer Overview
+  issuerOverview: {
     description: string;
-    metrics: { label: string; value: string }[];
+    ownershipStructure: string;
+    status: string; // PSU / Private
+    sectorPositioning: string;
+    majorBusinessLines: string[];
+    loanBookComposition?: string; // if NBFC
+    strategicRole: string;
+    management: { name: string; designation: string }[];
   };
-  management: { name: string; designation: string }[];
-  almSuitability: {
-    duration: 'Short' | 'Medium' | 'Long';
-    explanation: string;
-    solvencyImpact: string;
+  
+  // 3. Industry Overview
+  industryOverview: {
+    content: string;
+    growthDrivers: string[];
+    regulatoryFramework: string;
+    risks: string[];
   };
-  instrumentOverview: string;
-  yieldAnalysis: {
-    ncdYield: string;
-    gSecYield: string;
-    fdYield: string;
-    creditSpread: string;
-    yieldPremium: string;
-    significance: string;
+  
+  // 4. Credit Rating Analysis
+  creditRatingAnalysis: {
+    rating: string;
+    rationale: string;
+    keyDrivers: string[];
+    outlook: string;
+    downgradeTriggers: string[];
   };
-  businessIndustryOverview: string;
-  financialPerformanceTable: {
-    year: string;
-    revenue: string;
-    netProfit: string;
-  }[];
-  financialTrendData: {
-    year: string;
-    revenueValue: number;
-    netProfitValue: number;
-    revenueLabel: string;
-    netProfitLabel: string;
-  }[];
-  creditProfile: {
+  
+  // 5. Financial Performance Analysis
+  financialPerformanceAnalysis: {
+    discussion: string;
+    trends: {
+      metric: string;
+      values: { year: string; value: string }[];
+    }[];
+  };
+  
+  // 6. Balance Sheet Strength
+  balanceSheetStrength: {
     discussion: string;
     metrics: { label: string; value: string }[];
   };
-  swot: {
+  
+  // 7. Asset Quality and Credit Risk
+  assetQualityCreditRisk: {
+    discussion: string;
+    metrics: { label: string; value: string }[];
+  };
+  
+  // 8. Yield and Relative Value Analysis
+  yieldRelativeValueAnalysis: {
+    comparisonTable: { instrument: string; yield: string; spread: string }[];
+    spreadCalculation: string;
+  };
+  
+  // 9. Liquidity and Marketability
+  liquidityMarketability: {
+    listingExchange: string;
+    typicalLiquidity: string;
+    bidAskSpreads: string;
+    institutionalParticipation: string;
+    discussion: string;
+  };
+  
+  // 10. Risk Analysis
+  riskAnalysis: {
+    type: string;
+    description: string;
+    evidence: string;
+  }[];
+  
+  // 11. SWOT Analysis
+  swotAnalysis: {
     strengths: string[];
     weaknesses: string[];
     opportunities: string[];
     threats: string[];
   };
-  recommendation: string;
+  
+  // 12. ALM Suitability
+  almSuitability: {
+    duration: string;
+    explanation: string;
+    liabilityMatching: string;
+  };
+  
+  // 13. Financial Annexure
   financialAnnexure: {
     metric: string;
     fy21: string;
@@ -77,174 +127,234 @@ export interface InvestmentMemo {
     fy24: string;
     fy25: string;
   }[];
+  
+  // 14. Final Investment Recommendation
+  finalInvestmentRecommendation: {
+    verdict: 'BUY' | 'SELECTIVE BUY' | 'HOLD' | 'AVOID';
+    justification: string;
+    creditStrength: string;
+    yieldAttractiveness: string;
+    relativeSpread: string;
+    investorSuitability: string;
+  };
+  
   sources: string[];
 }
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export const geminiService = {
-  async getMarketScan(): Promise<NCD[]> {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Perform a LIVE market scan (as of March 2026) for Indian Corporate Non-Convertible Debentures (NCDs). 
-      Search reliable sources: IndiaBonds, NSE Debt Market, GoldenPi, and Jiraaf.
-      
-      CRITICAL: You MUST provide the MOST RECENT data available.
-      MANDATORY: Return at least 10 unique NCD instruments in the list.
-      
-      Filter for:
-      - Rating: AA+ or AAA (from CRISIL, ICRA, or India Ratings)
-      - Type: Corporate NCD
-      - Availability: Must be active in Primary or Secondary markets.
-      
-      Return a JSON array of objects with exactly these fields:
-      - issuerName: Full legal name of the issuer
-      - isin: Valid 12-character ISIN
-      - marketLabel: "UPCOMING" | "PRIMARY MARKET" | "SECONDARY MARKET"
-      - couponRate: Number (e.g. 8.25)
-      - rating: Agency + Rating (e.g. "CRISIL AAA")
-      - issuanceDate: Date string (e.g. "2024-01-15")
-      - maturityDate: Date string (e.g. "2030-01-15")
-      - almFit: "High" | "Medium" | "Low" (based on insurance ALM suitability)
-      - almExplanation: Short professional justification
-      - verdict: "BUY" | "HOLD" | "SELL"`,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-      },
-    });
+  async callAIWithRetry(fn: () => Promise<any>, retries = 2): Promise<any> {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        return await fn();
+      } catch (e: any) {
+        const isRPCError = e?.message?.includes('Rpc failed') || e?.message?.includes('xhr error');
+        if (isRPCError && i < retries) {
+          console.warn(`AI call failed (RPC error), retrying... (${i + 1}/${retries})`);
+          await new Promise(r => setTimeout(r, 1000 * (i + 1))); // Exponential backoff
+          continue;
+        }
+        throw e;
+      }
+    }
+  },
 
+  async getMarketScan(): Promise<NCD[]> {
     try {
+      const response = await this.callAIWithRetry(() => ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: `Perform a LIVE market scan (as of March 2026) for Indian Corporate Non-Convertible Debentures (NCDs). 
+        Search reliable sources: IndiaBonds, NSE Debt Market, GoldenPi, and Jiraaf.
+        
+        CRITICAL: You MUST provide the MOST RECENT data available.
+        MANDATORY: Return at least 10 unique NCD instruments in the list.
+        
+        Filter for:
+        - Rating: AA+ or AAA (from CRISIL, ICRA, or India Ratings)
+        - Type: Corporate NCD
+        - Availability: Must be active in Primary or Secondary markets.
+        
+        Return a JSON array of objects with exactly these fields:
+        - issuerName: Full legal name of the issuer
+        - isin: Valid 12-character ISIN
+        - marketLabel: "UPCOMING" | "PRIMARY MARKET" | "SECONDARY MARKET"
+        - couponRate: Number (e.g. 8.25)
+        - rating: Agency + Rating (e.g. "CRISIL AAA")
+        - issuanceDate: Date string (e.g. "2024-01-15")
+        - maturityDate: Date string (e.g. "2030-01-15")
+        - almFit: "High" | "Medium" | "Low" (based on insurance ALM suitability)
+        - almExplanation: Short professional justification
+        - verdict: "BUY" | "HOLD" | "SELL"`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+        },
+      }));
+
       const text = response.text || "[]";
-      
+      const result = this.extractJSON(text);
+      return Array.isArray(result) ? result : [result];
+    } catch (e) {
+      console.error("Market scan failed:", e);
+      // If it's a 500/RPC error, it might be transient or tool-related
+      return [];
+    }
+  },
+
+  extractJSON(text: string): any {
+    try {
       // Robust JSON extraction for arrays or objects
       let jsonStr = "";
       const startBracket = text.indexOf('[');
       const startBrace = text.indexOf('{');
       
-      // Determine if we are looking for an array or an object
       const start = (startBracket !== -1 && (startBrace === -1 || startBracket < startBrace)) ? startBracket : startBrace;
+      if (start === -1) return null;
+
       const openChar = text[start];
       const closeChar = openChar === '[' ? ']' : '}';
 
-      if (start !== -1) {
-        let depth = 0;
-        for (let i = start; i < text.length; i++) {
-          if (text[i] === openChar) depth++;
-          else if (text[i] === closeChar) depth--;
-          
-          if (depth === 0) {
-            jsonStr = text.substring(start, i + 1);
-            break;
-          }
+      let depth = 0;
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === openChar) depth++;
+        else if (text[i] === closeChar) depth--;
+        
+        if (depth === 0) {
+          jsonStr = text.substring(start, i + 1);
+          break;
         }
       }
 
-      if (!jsonStr) {
-        throw new Error("No valid JSON found in response");
-      }
-      
-      const result = JSON.parse(jsonStr);
-      return Array.isArray(result) ? result : [result];
+      return jsonStr ? JSON.parse(jsonStr) : null;
     } catch (e) {
-      console.error("Failed to parse market scan", e);
-      return [];
+      console.error("JSON extraction failed", e);
+      return null;
     }
   },
 
   async generateMemo(bond: NCD): Promise<InvestmentMemo | null> {
     const prompt = `Generate a complete institutional investment memo for ${bond.issuerName} (ISIN: ${bond.isin}) for an insurance ALM team. 
     
-    CONSISTENCY RULE:
-    You MUST use the following data already identified for this instrument:
-    - Issuer: ${bond.issuerName}
-    - ISIN: ${bond.isin}
-    - Coupon Rate: ${bond.couponRate}%
-    - Rating: ${bond.rating}
-    - Issuance Date: ${bond.issuanceDate}
-    - Maturity Date: ${bond.maturityDate}
-    - Verdict: ${bond.verdict}
-    
-    CRITICAL FINANCIAL DATA EXTRACTION RULES:
-    1. PRIMARY SOURCES: Screener.in > Moneycontrol Financials > Company Annual Report > NSE/BSE disclosures > Investor Presentation.
-    2. FALLBACK SOURCES: Tickertape, Trendlyne, Investing.com, ET Markets, Business Standard, Economic Times, Yahoo Finance, Credit rating agency reports (CRISIL / ICRA / CARE / India Ratings).
-    3. EXTRACTION METHOD:
-       - Step 1: Search for "${bond.issuerName} Screener financials". Locate P&L table.
-       - Step 2: Cross-verify with "${bond.issuerName} Moneycontrol financials".
-       - Step 3: Prioritize: Annual Report > NSE/BSE filings > Screener.in > Moneycontrol > Investor Presentation.
-       - Step 4: For non-listed banks/NBFCs/PSUs, use Annual reports, RBI disclosures, and Rating reports.
-    4. MANDATORY: The "financialAnnexure" section MUST contain actual reported numbers for the last 5 financial years (FY21, FY22, FY23, FY24, FY25).
-    5. CURRENCY: All values must be in ₹ Crore, except EPS which should be in ₹.
-    6. VALIDATION:
-       - Revenue MUST be greater than Net Profit for all years.
-       - Numbers MUST follow a logical growth trend.
-       - No financial year should be skipped.
-       - Search fallback sources before returning "Not Available".
-    7. LAST RESORT: Only return "Not Available" if the company is private and does not disclose statements, or data is absolutely not found in any listed source.
-    
-    Structure the JSON response exactly as follows:
-    - issuerName: ${bond.issuerName}
-    - generatedDate: Current date
-    - verdict: ${bond.verdict}
-    - instrumentDetails: { isin: "${bond.isin}", couponRate: "${bond.couponRate}%", rating: "${bond.rating}", issueDate: "${bond.issuanceDate}", maturityDate: "${bond.maturityDate}", marketType: "${bond.marketLabel}" }
-    - executiveSummary: 3-4 concise institutional points on credit strength, yield, positioning, and ALM fit.
-    - companyOverview: { 
-        description: Core business model, segments, and scale.
-        metrics: Array of { label, value } including Total assets, Loan book size, Branch network, Customer base.
-      }
-    - management: Array of { name, designation } including Chairman, MD, CEO, Executive Directors.
-    - almSuitability: { 
-        duration: "Short" | "Medium" | "Long", 
-        explanation: Duration matching and reinvestment risk.
-        solvencyImpact: Impact on insurance solvency.
-      }
-    - instrumentOverview: Bond structure, seniority, and secondary market liquidity.
-    - yieldAnalysis: { ncdYield, gSecYield, fdYield, creditSpread, yieldPremium, significance }
-    - businessIndustryOverview: Industry structure, market share, and competitive landscape.
-    - financialPerformanceTable: Array of { year, revenue, netProfit } for FY21-FY25. MANDATORY: Always include denominations (e.g., "₹ Cr") in the values.
-    - financialTrendData: Array of { year, revenueValue, netProfitValue, revenueLabel, netProfitLabel } for FY21-FY25 (use numeric values for graphing).
-    - creditProfile: {
-        discussion: Analysis of credit metrics and rating outlook.
-        metrics: Array of { label, value } including GNPA, NNPA, Capital adequacy.
-      }
-    - swot: { strengths: string[], weaknesses: string[], opportunities: string[], threats: string[] }. MANDATORY: All 4 sections must be present. Content must be FACT and NUMBER HEAVY (e.g., mention specific growth percentages, market share numbers, or debt ratios), not just general text.
-    - recommendation: Final institutional recommendation explaining yield, stability, ALM fit, and diversification.
-    - financialAnnexure: Detailed table for FY21-FY25. MANDATORY: Include rows for "Total Revenue / Operating Income", "Operating Profit", "Net Profit", and "Earnings Per Share (EPS)". STRICT RULE: Populate actual numbers from the mentioned sources. Do NOT use "N/A" or "Not Available" if data exists in public domain.
-    - sources: List of specific public sources used, cited accurately to reflect the retrieval process (e.g., "Screener.in Financial Statements for Revenue/PAT", "Moneycontrol for EPS verification", "Company Annual Report 2024 for Management details", etc.)`;
+    CRITICAL: The final recommendation verdict MUST be "${bond.verdict}". Do not change this.
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
+    Apply the following refinement rules within each section:
+
+    1. Instrument Overview:
+       Ensure all details are accurate and verified using issuer filings, exchange listing documents, and rating reports.
+       Include: Issuer name, NCD series, coupon rate, maturity, credit rating, issue size, listing exchange, ISIN, yield spread vs G-sec.
+       Verify coupon and maturity from official filings. Calculate spread vs current government bond yield using latest data.
+
+    2. Issuer Overview:
+       Factually correct and concise description using company website, annual reports, investor presentations, and financial databases.
+       Include: ownership structure, PSU / private status, sector positioning, major business lines, loan book composition (if NBFC), strategic role in sector.
+       MANDATORY: Include a list of key management personnel (Board of Directors, CEO, CFO, etc.) with their exact designations. Use only official company website or reliable financial portals (Moneycontrol, Bloomberg).
+       No marketing language.
+
+    3. Industry Overview:
+       Data-backed overview using recent sector data (within last 2 years).
+       Mention growth drivers, regulatory framework, and risks. Use government policy references.
+
+    4. Credit Rating Analysis:
+       Explain rationale, key drivers, outlook, and potential downgrade triggers using reports from CRISIL, ICRA, CARE, or India Ratings.
+       Summarize analyst reasoning.
+
+    5. Financial Performance Analysis:
+       MANDATORY: Extract all numbers using live search (Moneycontrol, Screener, annual reports, exchange filings).
+       Provide 3-5 year trends for: "Total Income" and "Net Profit". These MUST NOT be empty.
+       Also include: loan book (if NBFC), NIM, ROE, ROA, capital adequacy, leverage, asset quality (GNPA/NNPA).
+
+    6. Balance Sheet Strength:
+       Analyze using verified metrics: net worth, capital adequacy ratio, debt/equity, loan book growth, provisioning coverage, liquidity buffers.
+
+    7. Asset Quality and Credit Risk:
+       Factual analysis of GNPA/NNPA trends, sector exposure, borrower concentration, stressed assets, resolution trends.
+
+    8. Yield and Relative Value Analysis:
+       Bond spread analysis comparing NCD yield with G-secs, SDLs, AAA PSU bonds, and similar maturity corporate bonds.
+       Calculate spread = NCD yield - government bond yield. Provide comparison tables.
+
+    9. Liquidity and Marketability:
+       Assess trading liquidity realistically. Discuss listing exchange, typical liquidity, expected bid-ask spreads, institutional participation.
+
+    10. Risk Analysis:
+        Structured section including credit, sector, regulatory, interest rate, refinancing, and concentration risks with supporting evidence.
+
+    11. SWOT Analysis:
+        Specific to the issuer and instrument.
+        Strengths (balance sheet, govt support, rating), Weaknesses (concentration, dependency), Opportunities (sector growth, policy), Threats (regulatory, borrower distress).
+
+    12. ALM Suitability:
+        Analyze suitability for insurance, pension funds, debt funds, banks using duration and liability matching concepts.
+
+    13. Financial Annexure:
+        MANDATORY: Never display "Not Available". Retrieve data via live Google Search (Moneycontrol, Screener, Annual Reports).
+        Present P&L statement for last 5 years (Total income, Interest income, Operating expenses, PBT, Net profit, EPS).
+
+    14. Final Investment Recommendation:
+        Balanced credit view. Verdict MUST be: ${bond.verdict}.
+        Justify using credit risk, spread vs alternatives, and duration risk.
+
+    FINAL QUALITY CHECK:
+    - Verify all numbers using at least two financial sources.
+    - No placeholder text or missing data.
+    - Remove marketing language.
+    - Analysis must resemble institutional credit research quality.
+
+    Return the response as a JSON object matching this structure:
+    {
+      "issuerName": "Full Legal Name",
+      "generatedDate": "Month Day, Year (e.g. March 16, 2026)",
+      "verdict": "${bond.verdict}",
+      "instrumentOverview": { 
+        "issuerName": "...", 
+        "ncdSeries": "...", 
+        "couponRate": "e.g. 8.25%", 
+        "maturity": "e.g. Jan 15, 2030", 
+        "creditRating": "e.g. CRISIL AAA", 
+        "issueSize": "e.g. ₹500 Cr", 
+        "listingExchange": "NSE/BSE", 
+        "isin": "...", 
+        "yieldSpreadVsGSec": "e.g. 150 bps" 
       },
-    });
+      "issuerOverview": { 
+        "description": "...", 
+        "ownershipStructure": "...", 
+        "status": "...", 
+        "sectorPositioning": "...", 
+        "majorBusinessLines": ["..."], 
+        "loanBookComposition": "...", 
+        "strategicRole": "...",
+        "management": [ { "name": "...", "designation": "..." } ]
+      },
+      "industryOverview": { "content": "...", "growthDrivers": ["..."], "regulatoryFramework": "...", "risks": ["..."] },
+      "creditRatingAnalysis": { "rating": "...", "rationale": "...", "keyDrivers": ["..."], "outlook": "...", "downgradeTriggers": ["..."] },
+      "financialPerformanceAnalysis": { "discussion": "...", "trends": [ { "metric": "...", "values": [ { "year": "...", "value": "..." } ] } ] },
+      "balanceSheetStrength": { "discussion": "...", "metrics": [ { "label": "...", "value": "..." } ] },
+      "assetQualityCreditRisk": { "discussion": "...", "metrics": [ { "label": "...", "value": "..." } ] },
+      "yieldRelativeValueAnalysis": { "comparisonTable": [ { "instrument": "...", "yield": "...", "spread": "..." } ], "spreadCalculation": "..." },
+      "liquidityMarketability": { "listingExchange": "...", "typicalLiquidity": "...", "bidAskSpreads": "...", "institutionalParticipation": "...", "discussion": "..." },
+      "riskAnalysis": [ { "type": "...", "description": "...", "evidence": "..." } ],
+      "swotAnalysis": { "strengths": ["..."], "weaknesses": ["..."], "opportunities": ["..."], "threats": ["..."] },
+      "almSuitability": { "duration": "...", "explanation": "...", "liabilityMatching": "..." },
+      "financialAnnexure": [ { "metric": "...", "fy21": "...", "fy22": "...", "fy23": "...", "fy24": "...", "fy25": "..." } ],
+      "finalInvestmentRecommendation": { "verdict": "${bond.verdict}", "justification": "...", "creditStrength": "...", "yieldAttractiveness": "...", "relativeSpread": "...", "investorSuitability": "..." },
+      "sources": ["..."]
+    }`;
 
     try {
-      const text = response.text || "null";
-      
-      // Robust JSON extraction: find the first '{' and its matching '}'
-      let jsonStr = "";
-      const start = text.indexOf('{');
-      if (start !== -1) {
-        let depth = 0;
-        for (let i = start; i < text.length; i++) {
-          if (text[i] === '{') depth++;
-          else if (text[i] === '}') depth--;
-          
-          if (depth === 0) {
-            jsonStr = text.substring(start, i + 1);
-            break;
-          }
-        }
-      }
+      const response = await this.callAIWithRetry(() => ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+        },
+      }));
 
-      if (!jsonStr) {
-        throw new Error("No valid JSON object found in response");
-      }
-      
-      const data = JSON.parse(jsonStr);
+      const text = response.text || "null";
+      const data = this.extractJSON(text);
+      if (!data) return null;
 
       // Normalization to prevent runtime errors in UI
       if (data.financialAnnexure && !Array.isArray(data.financialAnnexure)) {
@@ -280,7 +390,7 @@ export const geminiService = {
 
   async chat(message: string, history: { role: string; parts: { text: string }[] }[]) {
     const chat = ai.chats.create({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-pro-preview",
       config: {
         systemInstruction: "You are the NBHI Investment Pro Suite AI. You provide institutional fixed-income research. Use Google Search for real-time data. Maintain a professional tone.",
         tools: [{ googleSearch: {} }],
@@ -288,6 +398,6 @@ export const geminiService = {
       history: history,
     });
 
-    return await chat.sendMessage({ message });
+    return await this.callAIWithRetry(() => chat.sendMessage({ message }));
   }
 };

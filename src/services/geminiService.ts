@@ -4,6 +4,7 @@ export interface NCD {
   issuerName: string;
   isin: string;
   marketLabel: 'UPCOMING' | 'PRIMARY MARKET' | 'SECONDARY MARKET';
+  bondType: string;
   couponRate: number;
   rating: string;
   issuanceDate: string;
@@ -144,15 +145,19 @@ export interface InvestmentMemo {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export const geminiService = {
-  async callAIWithRetry(fn: () => Promise<any>, retries = 2): Promise<any> {
+  async callAIWithRetry(fn: () => Promise<any>, retries = 3): Promise<any> {
     for (let i = 0; i <= retries; i++) {
       try {
         return await fn();
       } catch (e: any) {
+        const errorMsg = JSON.stringify(e);
         const isRPCError = e?.message?.includes('Rpc failed') || e?.message?.includes('xhr error');
-        if (isRPCError && i < retries) {
-          console.warn(`AI call failed (RPC error), retrying... (${i + 1}/${retries})`);
-          await new Promise(r => setTimeout(r, 1000 * (i + 1))); // Exponential backoff
+        const isQuotaError = e?.status === 429 || errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED');
+        
+        if ((isRPCError || isQuotaError) && i < retries) {
+          const delay = Math.pow(2, i) * 2000; // 2s, 4s, 8s, 16s...
+          console.warn(`AI call failed (${isQuotaError ? 'Quota' : 'RPC'} error), retrying in ${delay}ms... (${i + 1}/${retries})`);
+          await new Promise(r => setTimeout(r, delay));
           continue;
         }
         throw e;
@@ -163,22 +168,23 @@ export const geminiService = {
   async getMarketScan(): Promise<NCD[]> {
     try {
       const response = await this.callAIWithRetry(() => ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: `Perform a LIVE market scan (as of March 2026) for Indian Corporate Non-Convertible Debentures (NCDs). 
+        model: "gemini-3-flash-preview",
+        contents: `Perform a LIVE market scan (as of March 2026) for Indian Corporate Bonds and Non-Convertible Debentures (NCDs). 
         Search reliable sources: IndiaBonds, NSE Debt Market, GoldenPi, and Jiraaf.
         
         CRITICAL: You MUST provide the MOST RECENT data available.
-        MANDATORY: Return at least 10 unique NCD instruments in the list.
+        MANDATORY: Return at least 10 unique Corporate Bond/NCD instruments in the list.
         
         Filter for:
         - Rating: AA+ or AAA (from CRISIL, ICRA, or India Ratings)
-        - Type: Corporate NCD
+        - Type: Corporate Bond / NCD
         - Availability: Must be active in Primary or Secondary markets.
         
         Return a JSON array of objects with exactly these fields:
         - issuerName: Full legal name of the issuer
         - isin: Valid 12-character ISIN
         - marketLabel: "UPCOMING" | "PRIMARY MARKET" | "SECONDARY MARKET"
+        - bondType: Type of bond (e.g., "Corporate Bond", "NCD")
         - couponRate: Number (e.g. 8.25)
         - rating: Agency + Rating (e.g. "CRISIL AAA")
         - issuanceDate: Date string (e.g. "2024-01-15")
@@ -262,6 +268,7 @@ export const geminiService = {
     5. Financial Performance Analysis:
        MANDATORY: Extract all numbers using live search (Moneycontrol, Screener, annual reports, exchange filings).
        Provide 3-5 year trends for: "Total Income" and "Net Profit". These MUST NOT be empty.
+       These trends MUST be 100% consistent with the data provided in the Financial Annexure (Section 13).
        Also include: loan book (if NBFC), NIM, ROE, ROA, capital adequacy, leverage, asset quality (GNPA/NNPA).
 
     6. Balance Sheet Strength:
@@ -289,7 +296,9 @@ export const geminiService = {
 
     13. Financial Annexure:
         MANDATORY: Never display "Not Available". Retrieve data via live Google Search (Moneycontrol, Screener, Annual Reports).
-        Present P&L statement for last 5 years (Total income, Interest income, Operating expenses, PBT, Net profit, EPS).
+        Present P&L statement for last 5 years (FY21 to FY25).
+        You MUST include rows for exactly: "Total Income", "Interest Income", "Operating Expenses", "PBT", "Net Profit", and "EPS".
+        These metrics are CRITICAL for the investment memo graphs. Ensure the values are accurate and consistent across all sections.
 
     14. Final Investment Recommendation:
         Balanced credit view. Verdict MUST be: ${bond.verdict}.
@@ -344,7 +353,7 @@ export const geminiService = {
 
     try {
       const response = await this.callAIWithRetry(() => ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+        model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
           tools: [{ googleSearch: {} }],
@@ -388,9 +397,42 @@ export const geminiService = {
     }
   },
 
+  async searchBond(query: string): Promise<NCD | null> {
+    try {
+      const response = await this.callAIWithRetry(() => ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Search for the Indian Corporate Bond / NCD (Non-Convertible Debenture) matching this query: "${query}".
+        Find the latest official details for this specific bond.
+        
+        Return a JSON object with exactly these fields:
+        - issuerName: Full legal name of the issuer
+        - isin: Valid 12-character ISIN
+        - marketLabel: "UPCOMING" | "PRIMARY MARKET" | "SECONDARY MARKET" (Determine based on current status)
+        - bondType: Type of bond (e.g., "Corporate Bond", "NCD")
+        - couponRate: Number (e.g. 8.25)
+        - rating: Agency + Rating (e.g. "CRISIL AAA")
+        - issuanceDate: Date string (e.g. "2024-01-15")
+        - maturityDate: Date string (e.g. "2030-01-15")
+        - almFit: "High" | "Medium" | "Low" (based on insurance ALM suitability)
+        - almExplanation: Short professional justification
+        - verdict: "BUY" | "HOLD" | "SELL" (Provide a preliminary research-based verdict)`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+        },
+      }));
+
+      const text = response.text || "null";
+      return this.extractJSON(text);
+    } catch (e) {
+      console.error("Bond search failed:", e);
+      return null;
+    }
+  },
+
   async chat(message: string, history: { role: string; parts: { text: string }[] }[]) {
     const chat = ai.chats.create({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       config: {
         systemInstruction: "You are the NBHI Investment Pro Suite AI. You provide institutional fixed-income research. Use Google Search for real-time data. Maintain a professional tone.",
         tools: [{ googleSearch: {} }],

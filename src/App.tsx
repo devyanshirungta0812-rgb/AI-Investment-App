@@ -40,6 +40,38 @@ const safeString = (val: any): string => {
   return String(val);
 };
 
+const validateMemo = (m: InvestmentMemo | null) => {
+  if (!m) return false;
+  // Core sections required for a professional memo
+  const requiredSections = [
+    'instrumentOverview',
+    'issuerOverview',
+    'industryOverview',
+    'creditRatingAnalysis',
+    'financialPerformanceAnalysis',
+    'balanceSheetStrength',
+    'assetQualityCreditRisk',
+    'yieldRelativeValueAnalysis',
+    'liquidityMarketability',
+    'riskAnalysis',
+    'swotAnalysis',
+    'almSuitability',
+    'financialAnnexure',
+    'finalInvestmentRecommendation'
+  ];
+  return requiredSections.every(section => {
+    const val = (m as any)[section];
+    if (Array.isArray(val)) return val.length > 0;
+    if (typeof val === 'object' && val !== null) {
+      // Specific deep checks
+      if (section === 'issuerOverview' && (!val.management || val.management.length === 0)) return false;
+      if (section === 'financialPerformanceAnalysis' && (!val.trends || val.trends.length === 0)) return false;
+      return Object.keys(val).length > 0;
+    }
+    return !!val;
+  });
+};
+
 // --- Components ---
 
 const Sidebar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (t: string) => void }) => {
@@ -153,6 +185,7 @@ const MarketExplorer = ({ onSelectBond }: { onSelectBond: (bond: NCD) => void })
           <thead>
             <tr className="border-b border-border bg-slate-50">
               <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Issuer Name</th>
+              <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Bond Type</th>
               <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Coupon Rate %</th>
               <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Rating</th>
               <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Issuance Date</th>
@@ -178,6 +211,7 @@ const MarketExplorer = ({ onSelectBond }: { onSelectBond: (bond: NCD) => void })
                     </span>
                   </div>
                 </td>
+                <td className="p-4 text-sm text-slate-600">{bond.bondType}</td>
                 <td className="p-4 font-mono text-sm text-accent font-semibold">{bond.couponRate}%</td>
                 <td className="p-4">
                   <div className="flex items-center gap-2">
@@ -224,42 +258,68 @@ const MarketExplorer = ({ onSelectBond }: { onSelectBond: (bond: NCD) => void })
   );
 };
 
-const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, onBack: () => void }) => {
+const DeepDiveAnalyser = ({ selectedBond, onBack, onSelectBond }: { selectedBond: NCD | null, onBack: () => void, onSelectBond: (b: NCD | null) => void }) => {
   const [memo, setMemo] = useState<InvestmentMemo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [exporting, setExporting] = useState<'pdf' | 'word' | null>(null);
   const memoRef = React.useRef<HTMLDivElement>(null);
 
-  const validateMemo = (m: InvestmentMemo | null) => {
-    if (!m) return false;
-    // Core sections required for a professional memo
-    const requiredSections = [
-      'instrumentOverview',
-      'issuerOverview',
-      'industryOverview',
-      'creditRatingAnalysis',
-      'financialPerformanceAnalysis',
-      'balanceSheetStrength',
-      'assetQualityCreditRisk',
-      'yieldRelativeValueAnalysis',
-      'liquidityMarketability',
-      'riskAnalysis',
-      'swotAnalysis',
-      'almSuitability',
-      'financialAnnexure',
-      'finalInvestmentRecommendation'
-    ];
-    return requiredSections.every(section => {
-      const val = (m as any)[section];
-      if (Array.isArray(val)) return val.length > 0;
-      if (typeof val === 'object' && val !== null) {
-        // Specific deep checks
-        if (section === 'issuerOverview' && (!val.management || val.management.length === 0)) return false;
-        if (section === 'financialPerformanceAnalysis' && (!val.trends || val.trends.length === 0)) return false;
-        return Object.keys(val).length > 0;
+  const getTrendFromAnnexure = (metricName: string) => {
+    if (!memo?.financialAnnexure) return null;
+    const row = memo.financialAnnexure.find(r => 
+      r.metric.toLowerCase().replace(/[^a-z]/g, '').includes(metricName.toLowerCase().replace(/[^a-z]/g, ''))
+    );
+    if (!row) return null;
+    
+    return {
+      metric: row.metric,
+      values: [
+        { year: 'FY21', value: row.fy21 },
+        { year: 'FY22', value: row.fy22 },
+        { year: 'FY23', value: row.fy23 },
+        { year: 'FY24', value: row.fy24 },
+        { year: 'FY25', value: row.fy25 }
+      ].filter(v => v.value && v.value !== 'N/A' && v.value !== '-' && v.value !== 'Not Available')
+    };
+  };
+
+  const totalIncomeTrend = getTrendFromAnnexure('Total Income') || 
+    memo?.financialPerformanceAnalysis?.trends?.find(t => t.metric.toLowerCase().includes('total income'));
+  
+  const netProfitTrend = getTrendFromAnnexure('Net Profit') || 
+    memo?.financialPerformanceAnalysis?.trends?.find(t => t.metric.toLowerCase().includes('net profit'));
+
+  const otherTrends = memo?.financialPerformanceAnalysis?.trends?.filter(t => 
+    !t.metric.toLowerCase().includes('total income') && 
+    !t.metric.toLowerCase().includes('net profit')
+  ) || [];
+
+  const allTrends = [
+    ...(totalIncomeTrend ? [totalIncomeTrend] : []),
+    ...(netProfitTrend ? [netProfitTrend] : []),
+    ...otherTrends
+  ];
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setSearching(true);
+    try {
+      const bond = await geminiService.searchBond(searchQuery);
+      if (bond) {
+        onSelectBond(bond);
+      } else {
+        alert('Could not find bond details for the given query. Please try a valid ISIN or full company name.');
       }
-      return !!val;
-    });
+    } catch (error) {
+      console.error('Search error:', error);
+      alert('An error occurred while searching for the bond.');
+    } finally {
+      setSearching(false);
+    }
   };
 
   const handleExportPDF = async () => {
@@ -595,13 +655,15 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
   useEffect(() => {
     if (selectedBond) {
       const fetchMemo = async () => {
+        setMemo(null);
         setLoading(true);
         try {
           const data = await geminiService.generateMemo(selectedBond);
-          if (!data) {
-            alert('Failed to generate investment memo. The AI service might be experiencing high load. Please try again or select another bond.');
+          if (data && validateMemo(data)) {
+            setMemo(data);
+          } else {
+            alert('Failed to generate a complete investment memo. The AI service might be experiencing high load or returned incomplete data. Please try again or select another bond.');
           }
-          setMemo(data);
         } catch (error) {
           console.error('Memo generation error:', error);
           alert('An error occurred while generating the memo. Please check your connection and try again.');
@@ -615,14 +677,45 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
 
   if (!selectedBond) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-6">
-          <Search className="text-text-dim" size={32} />
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50">
+        <div className="max-w-md w-full">
+          <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mb-6 mx-auto">
+            <Search className="text-accent" size={32} />
+          </div>
+          <h3 className="text-xl font-bold mb-2 text-slate-900">Deep Dive Analyser</h3>
+          <p className="text-sm text-slate-500 mb-8">
+            Enter an ISIN or Bond Name to generate a full institutional investment memo.
+          </p>
+          
+          <form onSubmit={handleSearch} className="relative group">
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Enter ISIN (e.g. INE...) or Issuer Name"
+              className="w-full px-6 py-4 rounded-xl border border-border bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/50 shadow-sm transition-all pr-16"
+              disabled={searching}
+            />
+            <button 
+              type="submit"
+              disabled={searching || !searchQuery.trim()}
+              className="absolute right-2 top-2 bottom-2 px-4 bg-accent text-white rounded-lg flex items-center justify-center hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {searching ? <Loader2 size={20} className="animate-spin" /> : <ChevronRight size={20} />}
+            </button>
+          </form>
+          
+          <div className="mt-8 pt-8 border-t border-border">
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-4">Or Browse Market</p>
+            <button 
+              onClick={onBack}
+              className="text-sm font-bold text-accent hover:underline flex items-center gap-2 mx-auto"
+            >
+              Go to Market Explorer
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
         </div>
-        <h3 className="text-xl font-bold mb-2">No Issuer Selected</h3>
-        <p className="text-sm text-text-dim max-w-xs">
-          Select a bond from the Market Explorer to generate a full institutional investment memo.
-        </p>
       </div>
     );
   }
@@ -653,6 +746,16 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
           </button>
 
           <div className="flex gap-4">
+            <button 
+              onClick={() => {
+                onSelectBond(null);
+                setMemo(null);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-border text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+            >
+              <Search size={14} className="text-accent" />
+              New Search
+            </button>
             <button 
               onClick={handleExportPDF}
               disabled={exporting !== null}
@@ -825,27 +928,35 @@ const DeepDiveAnalyser = ({ selectedBond, onBack }: { selectedBond: NCD | null, 
               <h3 className="text-xs font-bold text-accent uppercase tracking-[0.2em] mb-4">05. Financial Performance Analysis</h3>
               <p className="text-sm text-slate-800 leading-relaxed mb-6">{memo.financialPerformanceAnalysis?.discussion}</p>
               <div className="space-y-8">
-                {memo.financialPerformanceAnalysis?.trends && memo.financialPerformanceAnalysis.trends.length > 0 ? (
-                  memo.financialPerformanceAnalysis.trends.map((trend, idx) => (
-                    <div key={idx} className="p-6 rounded-xl border border-border bg-white">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{trend.metric} Trend</h4>
-                      <div className="flex items-end gap-2 h-32">
+                {allTrends.length > 0 ? (
+                  allTrends.map((trend, idx) => (
+                    <div key={idx} className="p-6 rounded-xl border border-border bg-white shadow-sm">
+                      <div className="flex justify-between items-center mb-6">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{trend.metric} Trend</h4>
+                        <div className="px-2 py-1 bg-accent/5 rounded text-[9px] font-bold text-accent uppercase tracking-wider border border-accent/10">
+                          Sourced from Financial Annexure
+                        </div>
+                      </div>
+                      <div className="flex items-end gap-3 h-40 pt-8">
                         {trend.values.map((v, i) => {
-                          const numericValue = parseFloat(v.value.replace(/[^0-9.]/g, '')) || 0;
-                          const maxVal = Math.max(...trend.values.map(x => parseFloat(x.value.replace(/[^0-9.]/g, '')) || 0));
-                          const height = maxVal > 0 ? (numericValue / maxVal) * 100 : 0;
+                          const numericValue = parseFloat(v.value.replace(/[^0-9.-]/g, '')) || 0;
+                          const maxVal = Math.max(...trend.values.map(x => Math.abs(parseFloat(x.value.replace(/[^0-9.-]/g, '')) || 0)));
+                          const height = maxVal > 0 ? (Math.abs(numericValue) / maxVal) * 100 : 0;
+                          const isNegative = numericValue < 0;
+                          
                           return (
-                            <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
-                              <div className="relative w-full flex justify-center">
+                            <div key={i} className="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+                              <div className="relative w-full flex flex-col items-center justify-end h-full">
                                 <div 
-                                  className="w-full max-w-[40px] bg-accent/20 group-hover:bg-accent/40 transition-all rounded-t-sm"
+                                  className={`w-full max-w-[48px] transition-all rounded-t-sm relative ${isNegative ? 'bg-rose-500/30 group-hover:bg-rose-500/50' : 'bg-accent/20 group-hover:bg-accent/40'}`}
                                   style={{ height: `${height}%` }}
-                                />
-                                <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-accent whitespace-nowrap">
-                                  {v.value}
+                                >
+                                  <div className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] font-bold text-accent whitespace-nowrap bg-white/80 px-1.5 py-0.5 rounded shadow-sm border border-border/50 z-10">
+                                    {v.value}
+                                  </div>
                                 </div>
                               </div>
-                              <div className="text-[9px] font-bold text-slate-500">{v.year}</div>
+                              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">{v.year}</div>
                             </div>
                           );
                         })}
@@ -1288,6 +1399,7 @@ export default function App() {
               <DeepDiveAnalyser 
                 selectedBond={selectedBond} 
                 onBack={() => setActiveTab('explorer')} 
+                onSelectBond={setSelectedBond}
               />
             </motion.div>
           )}

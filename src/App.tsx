@@ -26,6 +26,7 @@ import { jsPDF } from 'jspdf';
 import { Document, Packer, Paragraph, TextRun, ImageRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
 import * as htmlToImage from 'html-to-image';
+import * as XLSX from 'xlsx';
 
 // --- Helpers ---
 
@@ -59,7 +60,8 @@ const validateMemo = (m: InvestmentMemo | null) => {
     'financialAnnexure',
     'finalInvestmentRecommendation'
   ];
-  return requiredSections.every(section => {
+  
+  const hasBasicSections = requiredSections.every(section => {
     const val = (m as any)[section];
     if (Array.isArray(val)) return val.length > 0;
     if (typeof val === 'object' && val !== null) {
@@ -70,6 +72,24 @@ const validateMemo = (m: InvestmentMemo | null) => {
     }
     return !!val;
   });
+
+  if (!hasBasicSections) return false;
+
+  // Deep check for Financial Annexure metrics
+  const requiredMetrics = ["Total Income", "Interest Income", "Operating Expenses", "PBT", "Net Profit", "EPS"];
+  const hasAllMetrics = requiredMetrics.every(metric => {
+    const row = m.financialAnnexure.find(r => r.metric.toLowerCase().includes(metric.toLowerCase()));
+    if (!row) return false;
+    // Check if at least 3 years have data (allowing for some missing historical data if absolutely necessary, but prompt is strict)
+    const years = ['fy21', 'fy22', 'fy23', 'fy24', 'fy25'];
+    const dataPoints = years.filter(y => {
+      const val = (row as any)[y];
+      return val && val !== 'N/A' && val !== '-' && val !== 'Not Available';
+    });
+    return dataPoints.length >= 3;
+  });
+
+  return hasAllMetrics;
 };
 
 // --- Components ---
@@ -132,7 +152,20 @@ const MarketExplorer = ({ onSelectBond }: { onSelectBond: (bond: NCD) => void })
   const fetchBonds = async () => {
     setLoading(true);
     const data = await geminiService.getMarketScan();
-    setBonds(data);
+    
+    // Sort bonds: UPCOMING and PRIMARY MARKET first, then SECONDARY MARKET
+    const sortedBonds = [...data].sort((a, b) => {
+      const order: Record<string, number> = {
+        'UPCOMING': 0,
+        'PRIMARY MARKET': 1,
+        'SECONDARY MARKET': 2
+      };
+      const orderA = order[a.marketLabel] ?? 3;
+      const orderB = order[b.marketLabel] ?? 3;
+      return orderA - orderB;
+    });
+    
+    setBonds(sortedBonds);
     setLoading(false);
   };
 
@@ -1259,12 +1292,133 @@ const DeepDiveAnalyser = ({ selectedBond, onBack, onSelectBond }: { selectedBond
   );
 };
 
-const ChatAssistant = () => {
-  const [messages, setMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([
-    { role: 'model', text: 'Welcome to NBHI Investment Assistant. How can I help you with NCD research today?' }
-  ]);
+
+const BondTable = ({ bonds, onSelectBond }: { bonds: NCD[], onSelectBond: (b: NCD) => void }) => {
+  return (
+    <div className="mt-4 border border-border rounded-lg overflow-hidden bg-white shadow-sm overflow-x-auto">
+      <table className="w-full text-left border-collapse min-w-[600px]">
+        <thead>
+          <tr className="border-b border-border bg-slate-50">
+            <th className="p-3 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Issuer</th>
+            <th className="p-3 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Coupon</th>
+            <th className="p-3 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Rating</th>
+            <th className="p-3 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Maturity</th>
+            <th className="p-3 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Verdict</th>
+            <th className="p-3 text-[9px] font-bold text-slate-500 uppercase tracking-widest text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bonds.map((bond, idx) => (
+            <tr key={idx} className="border-b border-border/50 hover:bg-slate-50 transition-colors">
+              <td className="p-3">
+                <div className="font-bold text-xs text-slate-900">{bond.issuerName}</div>
+                <div className="text-[9px] text-text-dim font-mono">{bond.isin}</div>
+              </td>
+              <td className="p-3 font-mono text-xs text-accent font-semibold">{bond.couponRate}%</td>
+              <td className="p-3 text-xs font-semibold text-slate-700">{bond.rating}</td>
+              <td className="p-3 text-xs text-slate-600">{bond.maturityDate}</td>
+              <td className="p-3">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  bond.verdict === 'BUY' ? 'bg-emerald-600 text-white' :
+                  bond.verdict === 'HOLD' ? 'bg-amber-500 text-white' : 'bg-rose-600 text-white'
+                }`}>
+                  {bond.verdict}
+                </span>
+              </td>
+              <td className="p-3 text-right">
+                <button 
+                  onClick={() => onSelectBond(bond)}
+                  className="text-[10px] font-bold text-accent hover:underline"
+                >
+                  Deep Dive
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const ChatAssistant = ({ 
+  onSelectBond, 
+  setActiveTab, 
+  messages, 
+  setMessages 
+}: { 
+  onSelectBond: (b: NCD) => void, 
+  setActiveTab: (t: string) => void,
+  messages: { role: 'user' | 'model'; text: string; bonds?: NCD[] }[],
+  setMessages: React.Dispatch<React.SetStateAction<{ role: 'user' | 'model'; text: string; bonds?: NCD[] }[]>>
+}) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setMessages(prev => [...prev, { role: 'user', text: `Uploaded file: ${file.name}` }]);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const fileData = evt.target?.result;
+        const wb = XLSX.read(fileData, { type: 'array' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const sheetData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        // Extract potential bond names or ISINs (assuming they are in the first column or contain keywords)
+        const bondQueries: string[] = [];
+        sheetData.forEach(row => {
+          row.forEach(cell => {
+            if (typeof cell === 'string' && cell.length > 3) {
+              // Simple heuristic: if it looks like a company name or ISIN
+              if (/^[A-Z]{2}[0-9A-Z]{10}$/.test(cell.toUpperCase()) || cell.split(' ').length > 1) {
+                bondQueries.push(cell);
+              }
+            }
+          });
+        });
+
+        const uniqueQueries = Array.from(new Set(bondQueries)).slice(0, 5); // Limit to 5 for now
+        
+        if (uniqueQueries.length === 0) {
+          setMessages(prev => [...prev, { role: 'model', text: "I couldn't find any clear bond names or ISINs in that file. Please ensure the file contains bond identifiers." }]);
+          setLoading(false);
+          return;
+        }
+
+        setMessages(prev => [...prev, { role: 'model', text: `Found ${uniqueQueries.length} potential bonds. Fetching market data...` }]);
+        
+        const fetchedBonds: NCD[] = [];
+        for (const query of uniqueQueries) {
+          const bond = await geminiService.searchBond(query);
+          if (bond) fetchedBonds.push(bond);
+        }
+
+        if (fetchedBonds.length > 0) {
+          setMessages(prev => [...prev, { 
+            role: 'model', 
+            text: `Here is the market data for the bonds found in your file:`,
+            bonds: fetchedBonds
+          }]);
+        } else {
+          setMessages(prev => [...prev, { role: 'model', text: "I found bond names but couldn't retrieve specific market data for them. Please try searching manually." }]);
+        }
+        setLoading(false);
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      console.error("File upload error:", error);
+      setMessages(prev => [...prev, { role: 'model', text: "Error processing the file. Please ensure it's a valid Excel or CSV file." }]);
+      setLoading(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -1281,7 +1435,47 @@ const ChatAssistant = () => {
       }));
       
       const response = await geminiService.chat(userMsg, history);
-      setMessages(prev => [...prev, { role: 'model', text: response.text || 'I encountered an error processing your request.' }]);
+      const responseText = response.text || 'I encountered an error processing your request.';
+      
+      // Intent detection: GENERATE_MEMO
+      const memoMatch = responseText.match(/\[GENERATE_MEMO:\s*(.*?)\]/);
+      if (memoMatch) {
+        const bondQuery = memoMatch[1].trim();
+        setMessages(prev => [...prev, { role: 'model', text: `Initiating deep dive for: **${bondQuery}**. Redirecting you to the Analyser...` }]);
+        
+        const bond = await geminiService.searchBond(bondQuery);
+        if (bond) {
+          onSelectBond(bond);
+          setActiveTab('analyser');
+        } else {
+          setMessages(prev => [...prev, { role: 'model', text: `Sorry, I couldn't find official details for "${bondQuery}" to start a deep dive. Please try again with a valid ISIN.` }]);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Intent detection: SCAN_MARKET
+      const scanMatch = responseText.match(/\[SCAN_MARKET:\s*(.*?)\]/);
+      if (scanMatch) {
+        setMessages(prev => [...prev, { role: 'model', text: `Scanning market for: **${scanMatch[1]}**...` }]);
+        
+        // Fetch data directly for the chat
+        const data = await geminiService.getMarketScan();
+        if (data && data.length > 0) {
+          setMessages(prev => [...prev, { 
+            role: 'model', 
+            text: `Here are the top bonds matching your request:`,
+            bonds: data.slice(0, 5)
+          }]);
+        } else {
+          setMessages(prev => [...prev, { role: 'model', text: "I couldn't find any bonds matching those criteria at the moment." }]);
+        }
+        
+        setLoading(false);
+        return;
+      }
+
+      setMessages(prev => [...prev, { role: 'model', text: responseText }]);
     } catch (error) {
       setMessages(prev => [...prev, { role: 'model', text: 'Error: Failed to connect to research engine.' }]);
     } finally {
@@ -1290,7 +1484,7 @@ const ChatAssistant = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white">
+    <div className="flex-1 flex flex-col h-full bg-white text-slate-900">
       <div className="p-6 border-b border-border flex justify-between items-center bg-slate-50">
         <div>
           <h2 className="text-lg font-bold tracking-tight text-accent">Research Assistant</h2>
@@ -1315,10 +1509,11 @@ const ChatAssistant = () => {
             }`}>
               {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
             </div>
-            <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
+            <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
               msg.role === 'user' ? 'bg-accent/5 text-slate-800 border border-accent/20' : 'bg-slate-50 text-slate-700 border border-border'
             }`}>
               <ReactMarkdown>{msg.text}</ReactMarkdown>
+              {msg.bonds && <BondTable bonds={msg.bonds} onSelectBond={onSelectBond} />}
             </div>
           </motion.div>
         ))}
@@ -1335,22 +1530,38 @@ const ChatAssistant = () => {
       </div>
 
       <div className="p-6 border-t border-border bg-slate-50">
-        <div className="max-w-4xl mx-auto relative">
-          <input 
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask about specific NCDs, yields, or ALM suitability..."
-            className="w-full bg-white border border-border rounded-xl py-4 pl-6 pr-14 text-sm focus:outline-none focus:border-accent transition-colors shadow-sm"
-          />
+        <div className="max-w-4xl mx-auto flex gap-3 items-center">
           <button 
-            onClick={handleSend}
-            disabled={loading}
-            className="absolute right-2 top-2 bottom-2 w-10 bg-accent text-white rounded-lg flex items-center justify-center hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-3 rounded-xl border border-border bg-white text-slate-600 hover:text-accent hover:border-accent transition-all shadow-sm"
+            title="Upload Excel/CSV"
           >
-            <Send size={18} />
+            <FileIcon size={20} />
           </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept=".xlsx,.xls,.csv,.xlsb" 
+            className="hidden" 
+          />
+          <div className="flex-1 relative">
+            <input 
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Ask about specific NCDs, yields, or ALM suitability..."
+              className="w-full bg-white border border-border rounded-xl py-4 pl-6 pr-14 text-sm text-slate-900 focus:outline-none focus:border-accent transition-colors shadow-sm"
+            />
+            <button 
+              onClick={handleSend}
+              disabled={loading}
+              className="absolute right-2 top-2 bottom-2 w-10 bg-accent text-white rounded-lg flex items-center justify-center hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-sm"
+            >
+              <Send size={18} />
+            </button>
+          </div>
         </div>
         <p className="text-center text-[10px] text-text-dim mt-4 uppercase tracking-widest font-bold">
           Institutional Research Mode • Data sourced from Public Disclosures
@@ -1365,6 +1576,9 @@ const ChatAssistant = () => {
 export default function App() {
   const [activeTab, setActiveTab] = useState('explorer');
   const [selectedBond, setSelectedBond] = useState<NCD | null>(null);
+  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string; bonds?: NCD[] }[]>([
+    { role: 'model', text: 'Welcome to NBHI Investment Assistant. How can I help you with NCD research today?' }
+  ]);
 
   const handleSelectBond = (bond: NCD) => {
     setSelectedBond(bond);
@@ -1372,10 +1586,10 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-bg text-white overflow-hidden">
+    <div className="flex h-screen bg-bg text-slate-900 overflow-hidden">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       
-      <main className="flex-1 flex flex-col relative overflow-hidden">
+      <main className="flex-1 flex flex-col relative overflow-hidden bg-white">
         <AnimatePresence mode="wait">
           {activeTab === 'explorer' && (
             <motion.div 
@@ -1411,7 +1625,12 @@ export default function App() {
               exit={{ opacity: 0, x: -20 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <ChatAssistant />
+              <ChatAssistant 
+                onSelectBond={handleSelectBond} 
+                setActiveTab={setActiveTab} 
+                messages={chatHistory}
+                setMessages={setChatHistory}
+              />
             </motion.div>
           )}
         </AnimatePresence>
